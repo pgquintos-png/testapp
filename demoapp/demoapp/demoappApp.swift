@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct demoappApp: App {
+    @State private var progress = GameProgress()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(progress)
         }
     }
 }
