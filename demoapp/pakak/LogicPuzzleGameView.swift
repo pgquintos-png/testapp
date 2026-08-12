@@ -1,6 +1,6 @@
 //
 //  LogicPuzzleGameView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -83,9 +83,9 @@ enum LogicPuzzleFactory {
         let difficulty = Difficulty(level: level)
         let count = difficulty.value(from: 4, to: 6, by: 70)
 
-        // The sizes stay clearly apart even at the top; the difficulty comes from being asked for
-        // second place rather than from splitting hairs over near identical shapes.
-        let gap = difficulty.value(from: 0.18, to: 0.11, by: 60)
+        // The gap keeps narrowing all the way to level 90 instead of settling by 60, so the sizes
+        // stay a real challenge to compare even at the top of the game.
+        let gap = difficulty.value(from: 0.18, to: 0.09, by: 90)
 
         let shape = shapePool(for: level).randomElement() ?? .circle
         let color = gridColors.randomElement() ?? .blue
@@ -130,9 +130,9 @@ enum LogicPuzzleFactory {
     /// Mental rotation: work out where an arrow points after it turns.
     private static func rotation(level: Int) -> LogicPuzzle {
         let difficulty = Difficulty(level: level)
-        // Quarter turns to begin with, then eighth turns, then twelfths, which makes the starting
-        // direction much harder to picture.
-        let step: Double = difficulty.has(70) ? 30 : (difficulty.has(40) ? 45 : 90)
+        // Quarter turns to begin with, then eighth turns, then twelfths, then twenty-fourths, which
+        // makes the starting direction much harder to picture.
+        let step: Double = difficulty.has(90) ? 15 : (difficulty.has(70) ? 30 : (difficulty.has(40) ? 45 : 90))
         let allAngles = stride(from: 0.0, to: 360.0, by: step).map { $0 }
         let start = allAngles.randomElement() ?? 0
 
@@ -163,7 +163,7 @@ enum LogicPuzzleFactory {
     /// Complete the grid: shapes change across the columns, colours down the rows.
     private static func grid(level: Int) -> LogicPuzzle {
         let difficulty = Difficulty(level: level)
-        let dimension = difficulty.has(80) ? 4 : (difficulty.has(45) ? 3 : 2)
+        let dimension = difficulty.has(95) ? 5 : (difficulty.has(80) ? 4 : (difficulty.has(45) ? 3 : 2))
         let shapes = Array(shapePool(for: level).shuffled().prefix(dimension))
         let colorIndices = Array(gridColors.indices.shuffled().prefix(dimension))
         let variesSize = difficulty.has(20) && dimension == 2
@@ -207,7 +207,7 @@ enum LogicPuzzleFactory {
             .prefix(difficulty.optionCount - 1)
         let all = ([(shape: answerShape, colorIndex: answerColor, scale: answerScale)] + wrong).shuffled()
 
-        let cellScale: CGFloat = dimension >= 4 ? 0.5 : 0.62
+        let cellScale: CGFloat = dimension >= 5 ? 0.42 : (dimension >= 4 ? 0.5 : 0.62)
 
         return LogicPuzzle(
             prompt: "Which piece finishes the picture?",
@@ -253,7 +253,7 @@ struct LogicPuzzleGameView: View {
 
     var body: some View {
         ZStack {
-            KidTheme.background.ignoresSafeArea()
+            KidBackdrop()
 
             ScrollView {
                 VStack(spacing: 22) {
@@ -305,7 +305,7 @@ struct LogicPuzzleGameView: View {
             drawing(content, baseSize: 96)
                 .frame(height: 110)
         case .grid(let rows):
-            let side: CGFloat = rows.count >= 4 ? 60 : 68
+            let side: CGFloat = rows.count >= 5 ? 52 : (rows.count >= 4 ? 60 : 68)
 
             VStack(spacing: 8) {
                 ForEach(rows.indices, id: \.self) { row in

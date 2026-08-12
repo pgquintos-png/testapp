@@ -1,6 +1,6 @@
 //
 //  Difficulty.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -29,12 +29,17 @@ struct Difficulty {
     /// True once the level has reached `unlock`, used to switch content on.
     func has(_ unlock: Int) -> Bool { level >= unlock }
 
-    /// The number of answer choices, which grows as the child gets further in.
+    /// The number of answer choices, which grows as the child gets further in. Six steps instead
+    /// of three keep the choice count climbing across the whole 100 levels rather than sitting flat
+    /// at 8 for the entire second half of the game.
     var optionCount: Int {
         switch level {
-        case ..<8: 4
+        case ..<6: 4
+        case ..<15: 5
         case ..<30: 6
-        default: 8
+        case ..<50: 7
+        case ..<75: 8
+        default: 9
         }
     }
 }

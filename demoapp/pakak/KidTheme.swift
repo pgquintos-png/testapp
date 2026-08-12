@@ -1,6 +1,6 @@
 //
 //  KidTheme.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -38,6 +38,53 @@ enum KidTheme {
 
     static func levelColor(for level: Int) -> Color {
         cardColors[(level - 1) % cardColors.count]
+    }
+}
+
+/// The gradient every screen sits on, plus a handful of soft blurred shapes that drift gently in
+/// place. Replaces a flat `KidTheme.background` fill with something livelier for kids without
+/// competing with the foreground content.
+struct KidBackdrop: View {
+    private struct Blob {
+        let color: Color
+        let size: CGFloat
+        let x: CGFloat
+        let y: CGFloat
+    }
+
+    private static let blobs: [Blob] = [
+        Blob(color: KidTheme.cardColors[1], size: 220, x: -0.32, y: -0.16),
+        Blob(color: KidTheme.cardColors[3], size: 170, x: 0.34, y: 0.06),
+        Blob(color: KidTheme.cardColors[6], size: 190, x: -0.28, y: 0.42),
+        Blob(color: KidTheme.cardColors[5], size: 150, x: 0.3, y: 0.62),
+    ]
+
+    @State private var drift = false
+
+    var body: some View {
+        ZStack {
+            KidTheme.background
+
+            GeometryReader { proxy in
+                ForEach(Self.blobs.indices, id: \.self) { index in
+                    let blob = Self.blobs[index]
+                    Circle()
+                        .fill(blob.color.opacity(0.16))
+                        .frame(width: blob.size, height: blob.size)
+                        .blur(radius: 30)
+                        .position(
+                            x: proxy.size.width * (0.5 + blob.x),
+                            y: proxy.size.height * (0.5 + blob.y) + (drift ? -12 : 12)
+                        )
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.easeInOut(duration: 5).repeatForever(autoreverses: true)) {
+                drift = true
+            }
+        }
     }
 }
 
@@ -129,25 +176,75 @@ struct CelebrationOverlay: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text(emoji)
-                .font(.system(size: 64))
-                .scaleEffect(animate ? 1.2 : 0.8)
-            Text(message)
-                .font(.title.bold())
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
+        ZStack {
+            if animate {
+                ConfettiBurst()
+            }
+
+            VStack(spacing: 12) {
+                Text(emoji)
+                    .font(.system(size: 64))
+                    .scaleEffect(animate ? 1.2 : 0.8)
+                Text(message)
+                    .font(.title.bold())
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+            }
+            .padding(32)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(color)
+                    .shadow(radius: 10)
+            )
+            .scaleEffect(animate ? 1.0 : 0.5)
+            .opacity(animate ? 1.0 : 0.0)
         }
-        .padding(32)
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(color)
-                .shadow(radius: 10)
-        )
-        .scaleEffect(animate ? 1.0 : 0.5)
-        .opacity(animate ? 1.0 : 0.0)
         .onAppear {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                animate = true
+            }
+        }
+    }
+}
+
+/// A short burst of colourful pieces flung out from the centre, layered behind the celebration
+/// card. Purely decorative, so it fades away rather than waiting to be dismissed.
+private struct ConfettiBurst: View {
+    private struct Piece: Identifiable {
+        let id = UUID()
+        let color: Color
+        let angle: Double
+        let distance: CGFloat
+        let size: CGFloat
+    }
+
+    @State private var pieces: [Piece] = []
+    @State private var animate = false
+
+    var body: some View {
+        ZStack {
+            ForEach(pieces) { piece in
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(piece.color)
+                    .frame(width: piece.size, height: piece.size)
+                    .offset(
+                        x: animate ? CGFloat(cos(piece.angle * .pi / 180)) * piece.distance : 0,
+                        y: animate ? CGFloat(sin(piece.angle * .pi / 180)) * piece.distance + 30 : 0
+                    )
+                    .rotationEffect(.degrees(animate ? Double.random(in: 180...540) : 0))
+                    .opacity(animate ? 0 : 1)
+            }
+        }
+        .onAppear {
+            pieces = (0..<18).map { index in
+                Piece(
+                    color: KidTheme.cardColors.randomElement() ?? KidTheme.starGold,
+                    angle: Double(index) / 18 * 360 + Double.random(in: -10...10),
+                    distance: CGFloat.random(in: 90...160),
+                    size: CGFloat.random(in: 7...11)
+                )
+            }
+            withAnimation(.easeOut(duration: 0.9)) {
                 animate = true
             }
         }
