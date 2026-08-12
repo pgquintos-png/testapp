@@ -1,6 +1,6 @@
 //
 //  BrainTeaserGameView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -90,7 +90,9 @@ enum BrainTeaserFactory {
     private static func pattern(level: Int) -> BrainTeaser {
         let difficulty = Difficulty(level: level)
         let shuffledPool = emojiPool.shuffled()
-        let distinctCount = difficulty.value(from: 2, to: 4, by: 45)
+        // Climbs to five distinct symbols by level 80 instead of stalling at four by 45, so the
+        // pattern keeps getting harder to hold in mind deep into the game.
+        let distinctCount = difficulty.value(from: 2, to: 5, by: 80)
 
         var cycle = Array(shuffledPool.prefix(distinctCount))
         // Past level 20 the repeat can be uneven, like 🍎 🍎 🍌, which is a harder pattern to hear.
@@ -157,7 +159,9 @@ enum BrainTeaserFactory {
 
     private static func numberSequence(level: Int) -> BrainTeaser {
         let difficulty = Difficulty(level: level)
-        let step = Int.random(in: 1...difficulty.value(from: 2, to: 12, by: 70))
+        // Keeps climbing to a step of 16 by level 90 instead of settling at 12 by 70, so the jumps
+        // stay a real mental stretch near the top of the game.
+        let step = Int.random(in: 1...difficulty.value(from: 2, to: 16, by: 90))
 
         // From level 50 the sequence sometimes counts backwards, starting high enough to stay above zero.
         let countsDown = difficulty.has(50) && Bool.random()
@@ -231,7 +235,7 @@ struct BrainTeaserGameView: View {
 
     var body: some View {
         ZStack {
-            KidTheme.background.ignoresSafeArea()
+            KidBackdrop()
 
             ScrollView {
                 VStack(spacing: 20) {

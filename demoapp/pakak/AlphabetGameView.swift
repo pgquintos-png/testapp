@@ -1,6 +1,6 @@
 //
 //  AlphabetGameView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -71,7 +71,7 @@ struct AlphabetGameView: View {
 
     private var level: Int { progress.level(for: activityName) }
     private var difficulty: Difficulty { progress.difficulty(for: activityName) }
-    private var optionCount: Int { min(difficulty.optionCount, 8) }
+    private var optionCount: Int { min(difficulty.optionCount, 9) }
 
     private var unlockedStyles: [QuizStyle] {
         QuizStyle.allCases.filter { $0.unlockLevel <= level }
@@ -101,7 +101,7 @@ struct AlphabetGameView: View {
 
     var body: some View {
         ZStack {
-            KidTheme.background.ignoresSafeArea()
+            KidBackdrop()
 
             ScrollView {
                 VStack(spacing: 20) {

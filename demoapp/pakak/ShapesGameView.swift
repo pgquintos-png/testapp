@@ -1,6 +1,6 @@
 //
 //  ShapesGameView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -180,7 +180,7 @@ struct ShapesGameView: View {
 
     var body: some View {
         ZStack {
-            KidTheme.background.ignoresSafeArea()
+            KidBackdrop()
 
             ScrollView {
                 VStack(spacing: 24) {

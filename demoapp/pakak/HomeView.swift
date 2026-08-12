@@ -1,6 +1,6 @@
 //
 //  HomeView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -17,7 +17,7 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                KidTheme.background.ignoresSafeArea()
+                KidBackdrop()
 
                 ScrollView {
                     VStack(spacing: 24) {

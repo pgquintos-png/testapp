@@ -1,6 +1,6 @@
 //
 //  CountingGameView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -45,7 +45,7 @@ struct CountingGameView: View {
 
     var body: some View {
         ZStack {
-            KidTheme.background.ignoresSafeArea()
+            KidBackdrop()
 
             ScrollView {
                 VStack(spacing: 20) {

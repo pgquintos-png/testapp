@@ -1,6 +1,6 @@
 //
 //  RiddleGameView.swift
-//  demoapp
+//  pakak
 //
 
 import SwiftUI
@@ -371,7 +371,7 @@ struct RiddleGameView: View {
 
     var body: some View {
         ZStack {
-            KidTheme.background.ignoresSafeArea()
+            KidBackdrop()
 
             ScrollView {
                 VStack(spacing: 20) {
