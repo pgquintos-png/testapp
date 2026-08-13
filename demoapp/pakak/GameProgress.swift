@@ -7,10 +7,14 @@ import SwiftUI
 
 @Observable
 final class GameProgress {
-    static let answersPerLevel = 3
+    /// One correct answer per level — so 100 correct answers completes a game.
+    static let answersPerLevel = 1
     static let maxLevel = 100
 
     var totalStars: Int = 0
+
+    /// Coupon codes keyed by activity name, generated once when the game is first completed.
+    private var couponCodes: [String: String] = [:]
 
     private var levels: [String: Int] = [:]
     private var answersInLevel: [String: Int] = [:]
@@ -29,6 +33,28 @@ final class GameProgress {
 
     func difficulty(for activity: String) -> Difficulty {
         Difficulty(level: level(for: activity))
+    }
+
+    /// True when the player has answered 100 questions correctly in this activity.
+    func isComplete(for activity: String) -> Bool {
+        level(for: activity) >= Self.maxLevel
+    }
+
+    /// Returns the persistent coupon code for a completed activity,
+    /// generating and storing one on first call.
+    func couponCode(for activity: String) -> String {
+        if let existing = couponCodes[activity] { return existing }
+        let code = Self.generateCode(for: activity)
+        couponCodes[activity] = code
+        return code
+    }
+
+    private static func generateCode(for activity: String) -> String {
+        let seeds = ["STAR", "MOON", "SUN", "HEART", "GEMS", "CROWN"]
+        let hash = activity.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
+        let word = seeds[hash % seeds.count]
+        let digits = String(format: "%04d", (hash &* 1_337) % 9_000 + 1_000)
+        return "PAKAK-\(word)-\(digits)"
     }
 
     /// Awards a star and reports whether this answer unlocked the next level.
