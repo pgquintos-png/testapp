@@ -221,10 +221,7 @@ struct BrainTeaserGameView: View {
     @Environment(GameProgress.self) private var progress
 
     @State private var puzzle: BrainTeaser?
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
     @State private var showHint = false
     @State private var streak = 0
     @State private var synthesizer = AVSpeechSynthesizer()
@@ -264,15 +261,15 @@ struct BrainTeaserGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Brain Teaser")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     private func promptCard(for puzzle: BrainTeaser) -> some View {
@@ -301,7 +298,7 @@ struct BrainTeaserGameView: View {
                 .fill(.white.opacity(0.7))
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         )
-        .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
     }
 
     /// The whole sequence has to be visible at once, so the tiles shrink as the pattern grows.
@@ -393,6 +390,8 @@ struct BrainTeaserGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         let next = picker.fresh(
             gap: 14,
@@ -402,24 +401,24 @@ struct BrainTeaserGameView: View {
         picker.note(next.key)
         puzzle = next
         showHint = false
-        showCelebration = false
     }
 
     private func check(_ answer: String, in puzzle: BrainTeaser) {
+        guard !feedback.isResolving else { return }
+
         guard answer == puzzle.answer else {
             streak = 0
-            wrongTap.toggle()
+            feedback.wrong("The answer was \(puzzle.answer).", then: newRound)
             return
         }
 
         streak += 1
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "Clever thinking!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "Clever thinking!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 
     private func speak(_ text: String) {

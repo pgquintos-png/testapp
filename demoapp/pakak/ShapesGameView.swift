@@ -162,10 +162,7 @@ struct ShapesGameView: View {
     @State private var targetShape = ShapeType.circle
     @State private var options: [ShapeType] = []
     @State private var rotation: Double = 0
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
 
     private let activityName = "Shapes"
 
@@ -202,7 +199,7 @@ struct ShapesGameView: View {
                                 .fill(.white.opacity(0.7))
                                 .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
                         )
-                        .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+                        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
                         ForEach(options) { shape in
@@ -215,18 +212,20 @@ struct ShapesGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Shapes")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         let pool = availableShapes
         // Cycling through every unlocked shape before repeating keeps the questions from clumping.
@@ -238,23 +237,22 @@ struct ShapesGameView: View {
 
         let tilts = difficulty.has(40) && targetShape.allowsRotation
         rotation = tilts ? Double(Int.random(in: 12...maxTilt) * (Bool.random() ? 1 : -1)) : 0
-
-        showCelebration = false
     }
 
     private func checkAnswer(_ answer: ShapeType) {
+        guard !feedback.isResolving else { return }
+
         guard answer == targetShape else {
-            wrongTap.toggle()
+            feedback.wrong("That was a \(targetShape.rawValue).", then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "Shape master!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "Shape master!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 }
 

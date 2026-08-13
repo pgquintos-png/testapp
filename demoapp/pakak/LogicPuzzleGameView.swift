@@ -241,10 +241,7 @@ struct LogicPuzzleGameView: View {
     @Environment(GameProgress.self) private var progress
 
     @State private var puzzle: LogicPuzzle?
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
     @State private var showHint = false
 
     private let activityName = "Logic Puzzles"
@@ -277,7 +274,7 @@ struct LogicPuzzleGameView: View {
                                         .fill(.white.opacity(0.7))
                                         .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
                                 )
-                                .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+                                .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
                         }
 
                         optionGrid(for: puzzle)
@@ -287,15 +284,15 @@ struct LogicPuzzleGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Logic Puzzles")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     @ViewBuilder
@@ -349,7 +346,11 @@ struct LogicPuzzleGameView: View {
     }
 
     private func optionGrid(for puzzle: LogicPuzzle) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+        // The answers here are pictures, so a missed one cannot be named the way the other games
+        // name theirs. The right card is ringed instead while the card explaining the miss is up.
+        let revealsAnswer = feedback.banner.map { !$0.celebrates } ?? false
+
+        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
             ForEach(puzzle.options) { option in
                 Button {
                     check(option)
@@ -361,10 +362,16 @@ struct LogicPuzzleGameView: View {
                                 .fill(.white)
                                 .shadow(color: .black.opacity(0.12), radius: 5, y: 3)
                         )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .strokeBorder(Color.green, lineWidth: 4)
+                                .opacity(revealsAnswer && option.isCorrect ? 1 : 0)
+                        )
                 }
                 .buttonStyle(KidCardButtonStyle())
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: revealsAnswer)
     }
 
     private func hintSection(for puzzle: LogicPuzzle) -> some View {
@@ -398,6 +405,8 @@ struct LogicPuzzleGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         let next = picker.fresh(
             gap: 14,
@@ -407,22 +416,22 @@ struct LogicPuzzleGameView: View {
         picker.note(next.key)
         puzzle = next
         showHint = false
-        showCelebration = false
     }
 
     private func check(_ option: LogicOption) {
+        guard !feedback.isResolving else { return }
+
         guard option.isCorrect else {
-            wrongTap.toggle()
+            feedback.wrong("The green ring shows the one.", then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "Smart thinking!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "Smart thinking!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 }
 

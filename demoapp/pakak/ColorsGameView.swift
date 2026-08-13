@@ -78,10 +78,7 @@ struct ColorsGameView: View {
     @Environment(GameProgress.self) private var progress
 
     @State private var round: Round?
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
 
     private let activityName = "Colors"
 
@@ -116,15 +113,15 @@ struct ColorsGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Colors")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     private func promptCard(for round: Round) -> some View {
@@ -143,7 +140,7 @@ struct ColorsGameView: View {
                 .fill(.white.opacity(0.7))
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         )
-        .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
     }
 
     private func optionGrid(for round: Round) -> some View {
@@ -178,6 +175,8 @@ struct ColorsGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         let questions = availableChallenges.flatMap { challenge in
             challenge.examples.map { (challenge: challenge, example: $0) }
@@ -206,22 +205,22 @@ struct ColorsGameView: View {
         )
         picker.note(next.key)
         round = next
-        showCelebration = false
     }
 
     private func check(_ answer: ColorChallenge, in round: Round) {
+        guard !feedback.isResolving else { return }
+
         guard answer.name == round.challenge.name else {
-            wrongTap.toggle()
+            feedback.wrong("\(round.example) is \(round.challenge.name).", then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "You got it!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "You got it!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 
     /// Pale swatches like White and Gold need dark text to stay legible.
