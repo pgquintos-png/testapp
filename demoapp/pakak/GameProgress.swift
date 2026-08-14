@@ -23,6 +23,59 @@ final class GameProgress {
 
     private static let memoryLimit = 400
 
+    /// Where the saved game lives. Injectable so a test can hand over a scratch suite instead of
+    /// writing over the progress on the device.
+    private let defaults: UserDefaults
+    private static let storageKey = "pakak.progress"
+
+    /// Everything worth keeping between launches. Versioned so a later format change can recognise
+    /// an old save rather than misreading it.
+    private struct Snapshot: Codable {
+        static let currentVersion = 1
+
+        var version = currentVersion
+        var totalStars: Int
+        var couponCodes: [String: String]
+        var levels: [String: Int]
+        var answersInLevel: [String: Int]
+        var askedKeys: [String: [String]]
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
+
+    /// Progress is written after every change rather than on the way out, so a game survives the
+    /// app being swiped away, crashing, or the battery running out between questions.
+    private func save() {
+        let snapshot = Snapshot(
+            totalStars: totalStars,
+            couponCodes: couponCodes,
+            levels: levels,
+            answersInLevel: answersInLevel,
+            askedKeys: askedKeys
+        )
+
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        defaults.set(data, forKey: Self.storageKey)
+    }
+
+    /// A missing or unreadable save is not worth complaining about — it just means a child who has
+    /// not played yet, so the games open at level 1 as they always did.
+    private func load() {
+        guard let data = defaults.data(forKey: Self.storageKey),
+              let saved = try? JSONDecoder().decode(Snapshot.self, from: data),
+              saved.version == Snapshot.currentVersion
+        else { return }
+
+        totalStars = saved.totalStars
+        couponCodes = saved.couponCodes
+        levels = saved.levels
+        answersInLevel = saved.answersInLevel
+        askedKeys = saved.askedKeys
+    }
+
     func level(for activity: String) -> Int {
         levels[activity] ?? 1
     }
@@ -46,6 +99,7 @@ final class GameProgress {
         if let existing = couponCodes[activity] { return existing }
         let code = Self.generateCode(for: activity)
         couponCodes[activity] = code
+        save()
         return code
     }
 
@@ -65,14 +119,19 @@ final class GameProgress {
         let answered = answersInCurrentLevel(for: activity) + 1
         guard answered >= Self.answersPerLevel else {
             answersInLevel[activity] = answered
+            save()
             return false
         }
 
         answersInLevel[activity] = 0
         let current = level(for: activity)
-        guard current < Self.maxLevel else { return false }
+        guard current < Self.maxLevel else {
+            save()
+            return false
+        }
 
         levels[activity] = current + 1
+        save()
         return true
     }
 
@@ -83,6 +142,7 @@ final class GameProgress {
             keys.removeFirst(keys.count - Self.memoryLimit)
         }
         askedKeys[activity] = keys
+        save()
     }
 
     /// How many questions ago this one was asked. A question never asked returns `Int.max`.
