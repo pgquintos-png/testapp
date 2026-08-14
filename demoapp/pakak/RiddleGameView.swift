@@ -350,10 +350,7 @@ struct RiddleGameView: View {
 
     @State private var riddle = RiddleLibrary.all[0]
     @State private var options: [RiddleAnswer] = []
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
     @State private var showBonusClue = false
 
     private let activityName = "Riddles"
@@ -402,15 +399,15 @@ struct RiddleGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Riddles")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     private var clueCard: some View {
@@ -444,7 +441,7 @@ struct RiddleGameView: View {
                 .fill(.white.opacity(0.7))
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         )
-        .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
     }
 
     private var optionGrid: some View {
@@ -476,6 +473,8 @@ struct RiddleGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         riddle = RiddleLibrary.random(level: level, picker: picker)
         picker.note("riddle:\(riddle.answer.word)")
@@ -483,22 +482,22 @@ struct RiddleGameView: View {
         let wanted = min(difficulty.optionCount, riddle.decoys.count + 1)
         options = ([riddle.answer] + riddle.decoys.shuffled().prefix(wanted - 1)).shuffled()
         showBonusClue = false
-        showCelebration = false
     }
 
     private func check(_ answer: RiddleAnswer) {
+        guard !feedback.isResolving else { return }
+
         guard answer == riddle.answer else {
-            wrongTap.toggle()
+            feedback.wrong("It was the \(riddle.answer.word.lowercased()) \(riddle.answer.emoji)", then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "You solved it!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "You solved it!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 }
 

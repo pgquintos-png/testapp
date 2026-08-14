@@ -60,10 +60,7 @@ struct AlphabetGameView: View {
     @State private var showQuiz = false
     @State private var selectedLetter: Character?
     @State private var round: Round?
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
     @State private var synthesizer = AVSpeechSynthesizer()
 
     private let activityName = "Alphabet"
@@ -116,14 +113,14 @@ struct AlphabetGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Alphabet")
         .navigationBarTitleDisplayMode(.inline)
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     private var modePicker: some View {
@@ -195,7 +192,7 @@ struct AlphabetGameView: View {
                         RoundedRectangle(cornerRadius: 24)
                             .fill(.white.opacity(0.7))
                     )
-                    .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+                    .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
                     .onTapGesture { speak(round.promptSpeech) }
 
                 Text(round.style.caption)
@@ -221,6 +218,8 @@ struct AlphabetGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         // Draw from the three hardest styles unlocked so far, which keeps some variety without
         // sliding back to the easiest questions at high levels.
@@ -257,8 +256,6 @@ struct AlphabetGameView: View {
             picker.note(next.key)
             round = next
         }
-
-        showCelebration = false
     }
 
     private func build(style: QuizStyle, letter: Character) -> Round {
@@ -344,19 +341,22 @@ struct AlphabetGameView: View {
     }
 
     private func check(_ answer: String, in round: Round) {
+        guard !feedback.isResolving else { return }
+
         guard answer == round.answerLabel else {
-            wrongTap.toggle()
+            // Saying the letter out loud matters most when the child has just missed it.
+            speak(round.answerLabel)
+            feedback.wrong("It was \(round.answerLabel).", then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "Awesome!"
+        let leveledUp = progress.recordCorrect(for: activityName)
         speak(round.answerLabel)
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "Awesome!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 
     private func speak(_ text: String) {

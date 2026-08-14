@@ -26,6 +26,8 @@ enum KidTheme {
     static let starGold = Color(red: 1.0, green: 0.84, blue: 0.0)
     static let headline = Color(red: 0.2, green: 0.3, blue: 0.5)
     static let levelUp = Color(red: 0.55, green: 0.35, blue: 0.85)
+    /// Warm rather than alarming: a wrong answer is a moment to learn from, not a failure.
+    static let tryAgain = Color(red: 0.98, green: 0.6, blue: 0.24)
 
     static func activityGradient(for index: Int) -> LinearGradient {
         let base = cardColors[index % cardColors.count]
@@ -154,38 +156,93 @@ struct AnswerButton: View {
     }
 }
 
-struct CelebrationOverlay: View {
-    let message: String
-    var emoji: String = "🎉"
-    var color: Color = Color.green.opacity(0.9)
+/// The pause between answering and the next question.
+///
+/// Games hand their result here instead of tracking overlays and timers themselves: this puts up
+/// the right card, swallows taps while it is showing, and calls back when it is time to move on.
+/// A wrong answer is treated the same way as a right one — it says what the answer was and then
+/// the game moves along, so a child is never left tapping at a question they cannot solve.
+@Observable
+final class AnswerFeedback {
+    struct Banner: Equatable {
+        let message: String
+        let emoji: String
+        let color: Color
+        let celebrates: Bool
+    }
 
-    @State private var animate = false
+    private(set) var banner: Banner?
+    /// Flipped on every wrong answer to drive the shake and the error haptic.
+    private(set) var wrongTap = false
+    /// Flipped on every right answer to drive the success haptic.
+    private(set) var rightTap = false
 
-    init(message: String, leveledUp: Bool) {
-        self.init(
-            message: message,
-            emoji: leveledUp ? "🏆" : "🎉",
-            color: leveledUp ? KidTheme.levelUp : Color.green.opacity(0.9)
+    /// True while a card is up. Games check this before scoring so a second tap cannot answer a
+    /// question that is already on its way out, or land on the one replacing it.
+    var isResolving: Bool { banner != nil }
+
+    private static let correctPause = 1.5
+    /// Longer than the correct pause, because there is an answer to read before it disappears.
+    private static let wrongPause = 2.2
+
+    private static let encouragements = ["Not quite!", "Almost!", "Good try!", "So close!"]
+
+    func correct(_ message: String, leveledUp: Bool, then advance: @escaping () -> Void) {
+        guard !isResolving else { return }
+        rightTap.toggle()
+        show(
+            Banner(
+                message: message,
+                emoji: leveledUp ? "🏆" : "🎉",
+                color: leveledUp ? KidTheme.levelUp : Color.green.opacity(0.9),
+                celebrates: true
+            ),
+            for: Self.correctPause,
+            then: advance
         )
     }
 
-    init(message: String, emoji: String = "🎉", color: Color = Color.green.opacity(0.9)) {
-        self.message = message
-        self.emoji = emoji
-        self.color = color
+    /// `reveal` names the answer that was being looked for, and gets an encouraging line above it.
+    func wrong(_ reveal: String, then advance: @escaping () -> Void) {
+        guard !isResolving else { return }
+        wrongTap.toggle()
+        show(
+            Banner(
+                message: "\(Self.encouragements.randomElement() ?? "Not quite!")\n\(reveal)",
+                emoji: "💡",
+                color: KidTheme.tryAgain,
+                celebrates: false
+            ),
+            for: Self.wrongPause,
+            then: advance
+        )
     }
+
+    /// Called by each game as it lines up the next question.
+    func clear() { banner = nil }
+
+    private func show(_ banner: Banner, for pause: Double, then advance: @escaping () -> Void) {
+        withAnimation { self.banner = banner }
+        DispatchQueue.main.asyncAfter(deadline: .now() + pause, execute: advance)
+    }
+}
+
+struct FeedbackOverlay: View {
+    let banner: AnswerFeedback.Banner
+
+    @State private var animate = false
 
     var body: some View {
         ZStack {
-            if animate {
+            if animate && banner.celebrates {
                 ConfettiBurst()
             }
 
             VStack(spacing: 12) {
-                Text(emoji)
+                Text(banner.emoji)
                     .font(.system(size: 64))
                     .scaleEffect(animate ? 1.2 : 0.8)
-                Text(message)
+                Text(banner.message)
                     .font(.title.bold())
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white)
@@ -193,7 +250,7 @@ struct CelebrationOverlay: View {
             .padding(32)
             .background(
                 RoundedRectangle(cornerRadius: 24)
-                    .fill(color)
+                    .fill(banner.color)
                     .shadow(radius: 10)
             )
             .scaleEffect(animate ? 1.0 : 0.5)

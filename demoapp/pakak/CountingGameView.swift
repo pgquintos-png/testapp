@@ -6,22 +6,73 @@
 import SwiftUI
 
 struct CountingGameView: View {
+    /// Counting is the whole game to begin with. Sums join it once the child has proved they can
+    /// count reliably, which is what reaching level 10 means here.
+    private enum Question {
+        case count, add, subtract
+    }
+
     private struct Round {
+        let question: Question
+        /// The first panel: the whole group when counting or taking away, the first pile when adding.
         let objects: [String]
+        /// The second pile, only used when adding.
+        let extra: [String]
+        /// How many objects at the end of `objects` are crossed out, only used when taking away.
+        let takenAway: Int
+        /// Later levels drop the pictures and leave the numbers to work with.
+        let showsObjects: Bool
         let target: Int
         let options: [Int]
 
-        /// Two rounds count as the same question when the amount and the objects match.
-        var key: String { "\(target)|\(Set(objects).sorted().joined())" }
+        var prompt: String {
+            switch question {
+            case .count: "How many do you see?"
+            case .add: "How many altogether?"
+            case .subtract: "How many are left?"
+            }
+        }
+
+        /// The sum written out. Counting questions have nothing to write.
+        var equation: String? {
+            switch question {
+            case .count: nil
+            case .add: "\(objects.count) + \(extra.count) = ?"
+            case .subtract: "\(objects.count) − \(takenAway) = ?"
+            }
+        }
+
+        /// Shown when the answer was missed — the whole sum, not just the number.
+        var reveal: String {
+            switch question {
+            case .count: "There were \(target)."
+            case .add: "\(objects.count) + \(extra.count) = \(target)"
+            case .subtract: "\(objects.count) − \(takenAway) = \(target)"
+            }
+        }
+
+        /// Two rounds count as the same question when the sum and the objects match.
+        var key: String {
+            switch question {
+            case .count: "count|\(target)|\(Set(objects).sorted().joined())"
+            case .add: "add|\(objects.count)+\(extra.count)"
+            case .subtract: "sub|\(objects.count)-\(takenAway)"
+            }
+        }
     }
 
     @Environment(GameProgress.self) private var progress
 
-    @State private var round = Round(objects: [], target: 0, options: [])
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var shakeWrong = false
+    @State private var round = Round(
+        question: .count,
+        objects: [],
+        extra: [],
+        takenAway: 0,
+        showsObjects: true,
+        target: 0,
+        options: []
+    )
+    @State private var feedback = AnswerFeedback()
 
     private let activityName = "Counting"
     private let emojiPool = ["🍎", "🌟", "🐶", "🦋", "🌸", "🎈", "🐸", "🍪", "🍓", "🐝", "🐢", "🌺"]
@@ -43,6 +94,18 @@ struct CountingGameView: View {
     private var columnCount: Int { maxCount > 15 ? 6 : (maxCount > 8 ? 5 : 4) }
     private var tileSide: CGFloat { maxCount > 15 ? 38 : (maxCount > 8 ? 44 : 56) }
 
+    /// How often a question is a sum rather than a count. Nothing until level 10, then a growing
+    /// share of them. This reads the level directly instead of going through `Difficulty.has`,
+    /// which deliberately brings unlocks forward — adding and taking away should start exactly
+    /// where a parent would expect it to, at level 10.
+    private var arithmeticShare: Double {
+        guard level >= 10 else { return 0 }
+        return Double(difficulty.value(from: 0.35, to: 0.85, by: 70))
+    }
+
+    /// Once the sums are familiar the counters come away and only the numbers are left.
+    private var showsCounters: Bool { !difficulty.has(60) }
+
     var body: some View {
         ZStack {
             KidBackdrop()
@@ -54,11 +117,12 @@ struct CountingGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
-                    Text("How many do you see?")
+                    Text(round.prompt)
                         .font(.title.bold())
+                        .multilineTextAlignment(.center)
                         .foregroundStyle(KidTheme.headline)
 
-                    objectGrid
+                    stage
 
                     Text("Tap the right number!")
                         .font(.title3)
@@ -69,24 +133,59 @@ struct CountingGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
                     .transition(.scale.combined(with: .opacity))
             }
         }
         .navigationTitle("Counting")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: shakeWrong)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
-    private var objectGrid: some View {
+    /// The objects to work from, the sum written underneath, or both.
+    private var stage: some View {
+        VStack(spacing: 14) {
+            if round.showsObjects {
+                objectPanel(round.objects, crossedFrom: round.objects.count - round.takenAway)
+
+                if round.question == .add {
+                    Text("+")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(KidTheme.headline)
+                    objectPanel(round.extra)
+                }
+            }
+
+            if let equation = round.equation {
+                Text(equation)
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(KidTheme.headline)
+                    // With the counters gone the sum is the whole question, so it gets the card
+                    // the objects would have been sitting on.
+                    .padding(round.showsObjects ? 0 : 32)
+                    .frame(maxWidth: round.showsObjects ? nil : .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(Color.white.opacity(round.showsObjects ? 0 : 0.6))
+                    )
+            }
+        }
+        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
+    }
+
+    /// `crossedFrom` marks where the objects being taken away start, so they can be shown fading
+    /// out of the group rather than as a second pile the child has to hold in their head.
+    private func objectPanel(_ objects: [String], crossedFrom: Int = .max) -> some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnCount)
 
         return LazyVGrid(columns: columns, spacing: 10) {
-            ForEach(round.objects.indices, id: \.self) { index in
-                Text(round.objects[index])
+            ForEach(objects.indices, id: \.self) { index in
+                let isTaken = index >= crossedFrom
+
+                Text(objects[index])
                     .font(.system(size: tileSide * 0.68))
                     .frame(width: tileSide, height: tileSide)
                     .background(
@@ -94,6 +193,14 @@ struct CountingGameView: View {
                             .fill(.white)
                             .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
                     )
+                    .opacity(isTaken ? 0.35 : 1)
+                    .overlay {
+                        if isTaken {
+                            Image(systemName: "xmark")
+                                .font(.system(size: tileSide * 0.5, weight: .heavy))
+                                .foregroundStyle(KidTheme.cardColors[0])
+                        }
+                    }
             }
         }
         .padding()
@@ -101,7 +208,6 @@ struct CountingGameView: View {
             RoundedRectangle(cornerRadius: 24)
                 .fill(Color.white.opacity(0.6))
         )
-        .modifier(ShakeEffect(shakes: shakeWrong ? 2 : 0))
     }
 
     private var answerGrid: some View {
@@ -120,19 +226,73 @@ struct CountingGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         let next = picker.fresh(make: makeRound, key: { $0.key })
         picker.note(next.key)
         round = next
-        showCelebration = false
     }
 
     private func makeRound() -> Round {
+        guard Double.random(in: 0..<1) < arithmeticShare else { return countingRound() }
+        return Bool.random() ? additionRound() : subtractionRound()
+    }
+
+    private func countingRound() -> Round {
         let target = Int.random(in: min(minCount, maxCount)...maxCount)
         let palette = Array(emojiPool.shuffled().prefix(objectKinds))
         let objects = (0..<target).compactMap { _ in palette.randomElement() }
 
-        return Round(objects: objects, target: target, options: numberOptions(for: target))
+        return Round(
+            question: .count,
+            objects: objects,
+            extra: [],
+            takenAway: 0,
+            showsObjects: true,
+            target: target,
+            options: numberOptions(for: target)
+        )
+    }
+
+    /// Two piles side by side. Each pile keeps to one kind of object so the child can see which
+    /// pile is which without counting the same thing twice.
+    private func additionRound() -> Round {
+        let total = Int.random(in: sumRange)
+        let first = Int.random(in: 1..<total)
+        let palette = emojiPool.shuffled()
+
+        return Round(
+            question: .add,
+            objects: Array(repeating: palette[0], count: first),
+            extra: Array(repeating: palette[1], count: total - first),
+            takenAway: 0,
+            showsObjects: showsCounters,
+            target: total,
+            options: numberOptions(for: total)
+        )
+    }
+
+    private func subtractionRound() -> Round {
+        let total = Int.random(in: sumRange)
+        let takenAway = Int.random(in: 1..<total)
+        let emoji = emojiPool.randomElement() ?? "🍎"
+
+        return Round(
+            question: .subtract,
+            objects: Array(repeating: emoji, count: total),
+            extra: [],
+            takenAway: takenAway,
+            showsObjects: showsCounters,
+            target: total - takenAway,
+            options: numberOptions(for: total - takenAway)
+        )
+    }
+
+    /// Sums need at least two objects to split, and grow with the same ceiling as counting.
+    private var sumRange: ClosedRange<Int> {
+        let top = max(2, maxCount)
+        return min(max(2, minCount), top)...top
     }
 
     /// Once past level 8 the wrong answers crowd around the target, so the child has to count
@@ -151,18 +311,19 @@ struct CountingGameView: View {
     }
 
     private func checkAnswer(_ answer: Int) {
+        guard !feedback.isResolving else { return }
+
         guard answer == round.target else {
-            shakeWrong.toggle()
+            feedback.wrong(round.reveal, then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "Great counting!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "Great counting!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 }
 

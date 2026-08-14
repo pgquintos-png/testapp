@@ -297,10 +297,7 @@ struct WordRiddleGameView: View {
     @Environment(GameProgress.self) private var progress
 
     @State private var puzzle: WordPuzzle?
-    @State private var showCelebration = false
-    @State private var celebrationMessage = ""
-    @State private var didLevelUp = false
-    @State private var wrongTap = false
+    @State private var feedback = AnswerFeedback()
     @State private var showHint = false
     @State private var synthesizer = AVSpeechSynthesizer()
 
@@ -328,15 +325,15 @@ struct WordRiddleGameView: View {
                 .padding()
             }
 
-            if showCelebration {
-                CelebrationOverlay(message: celebrationMessage, leveledUp: didLevelUp)
+            if let banner = feedback.banner {
+                FeedbackOverlay(banner: banner)
             }
         }
         .navigationTitle("Word Riddles")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { newRound() }
-        .sensoryFeedback(.success, trigger: showCelebration)
-        .sensoryFeedback(.error, trigger: wrongTap)
+        .sensoryFeedback(.success, trigger: feedback.rightTap)
+        .sensoryFeedback(.error, trigger: feedback.wrongTap)
     }
 
     private func promptCard(for puzzle: WordPuzzle) -> some View {
@@ -367,7 +364,7 @@ struct WordRiddleGameView: View {
                 .fill(.white.opacity(0.7))
                 .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
         )
-        .modifier(ShakeEffect(shakes: wrongTap ? 2 : 0))
+        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
     }
 
     private func optionGrid(for puzzle: WordPuzzle) -> some View {
@@ -426,6 +423,8 @@ struct WordRiddleGameView: View {
     }
 
     private func newRound() {
+        feedback.clear()
+
         let picker = QuestionPicker(progress: progress, activity: activityName)
         let next = picker.fresh(
             gap: 20,
@@ -435,22 +434,22 @@ struct WordRiddleGameView: View {
         picker.note(next.key)
         puzzle = next
         showHint = false
-        showCelebration = false
     }
 
     private func check(_ answer: String, in puzzle: WordPuzzle) {
+        guard !feedback.isResolving else { return }
+
         guard answer == puzzle.answer else {
-            wrongTap.toggle()
+            feedback.wrong("The answer was \(puzzle.answer.uppercased()).", then: newRound)
             return
         }
 
-        didLevelUp = progress.recordCorrect(for: activityName)
-        celebrationMessage = didLevelUp ? "Level \(level) unlocked!" : "Word wizard!"
-        withAnimation { showCelebration = true }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            newRound()
-        }
+        let leveledUp = progress.recordCorrect(for: activityName)
+        feedback.correct(
+            leveledUp ? "Level \(level) unlocked!" : "Word wizard!",
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 
     private func speak(_ text: String) {
