@@ -179,6 +179,10 @@ struct AlphabetGameView: View {
                     answersInLevel: progress.answersInCurrentLevel(for: activityName)
                 )
 
+                if let voucher = progress.couponCode(for: activityName) {
+                    VoucherCard(activity: activityName, code: voucher)
+                }
+
                 Text(round.style.instruction)
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
@@ -353,7 +357,7 @@ struct AlphabetGameView: View {
         let leveledUp = progress.recordCorrect(for: activityName)
         speak(round.answerLabel)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "Awesome!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Awesome!"),
             leveledUp: leveledUp,
             then: newRound
         )

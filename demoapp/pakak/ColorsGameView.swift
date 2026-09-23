@@ -101,6 +101,10 @@ struct ColorsGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     Text("Find the color!")
                         .font(.title.bold())
                         .foregroundStyle(KidTheme.headline)
@@ -217,7 +221,7 @@ struct ColorsGameView: View {
 
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "You got it!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "You got it!"),
             leveledUp: leveledUp,
             then: newRound
         )

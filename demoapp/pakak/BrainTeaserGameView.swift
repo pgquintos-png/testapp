@@ -241,6 +241,10 @@ struct BrainTeaserGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     if streak > 1 {
                         Text("🔥 \(streak) in a row!")
                             .font(.headline)
@@ -415,7 +419,7 @@ struct BrainTeaserGameView: View {
         streak += 1
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "Clever thinking!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Clever thinking!"),
             leveledUp: leveledUp,
             then: newRound
         )

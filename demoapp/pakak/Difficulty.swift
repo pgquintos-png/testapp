@@ -63,8 +63,9 @@ struct Difficulty {
         return 1 + Int((pow(placed, unlockShape) * span).rounded())
     }
 
-    /// The number of answer choices, which grows as the child gets further in. Reaching nine by
-    /// level 45 rather than 75 keeps the pressure on through the middle of the game; the games cap
-    /// this against their own pools, so nine only appears where there is material for it.
-    var optionCount: Int { value(from: 4, to: 9, by: 45) }
+    /// The number of answer choices, which grows as the child gets further in. Six is the ceiling —
+    /// more than that and the choices stop fitting on screen at a readable size — and it is reached
+    /// by level 45 so the pressure is on through the middle of the game; the games cap this against
+    /// their own pools, so six only appears where there is material for it.
+    var optionCount: Int { value(from: 4, to: 6, by: 45) }
 }
