@@ -316,6 +316,10 @@ struct WordRiddleGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     if let puzzle {
                         promptCard(for: puzzle)
                         optionGrid(for: puzzle)
@@ -446,7 +450,7 @@ struct WordRiddleGameView: View {
 
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "Word wizard!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Word wizard!"),
             leveledUp: leveledUp,
             then: newRound
         )

@@ -134,6 +134,70 @@ struct LevelBadge: View {
     }
 }
 
+/// The prize for finishing all 100 levels of a game: a voucher code to show a grown-up.
+///
+/// Sits at the top of a finished game and stays there — the code is part of the saved progress, so
+/// it is not a banner that can be missed while a child is celebrating.
+struct VoucherCard: View {
+    let activity: String
+    let code: String
+
+    @State private var copied = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("🎟️")
+                .font(.system(size: 40))
+
+            Text("\(activity) complete!")
+                .font(.title3.bold())
+                .foregroundStyle(.white)
+
+            Text("Show this code to claim your prize")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.9))
+                .multilineTextAlignment(.center)
+
+            Button {
+                UIPasteboard.general.string = code
+                copied = true
+            } label: {
+                HStack(spacing: 8) {
+                    Text(code)
+                        .font(.title3.monospaced().bold())
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.subheadline)
+                }
+                .foregroundStyle(KidTheme.headline)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(Capsule().fill(.white))
+            }
+            .buttonStyle(KidCardButtonStyle())
+
+            if copied {
+                Text("Copied!")
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 24)
+                .fill(
+                    LinearGradient(
+                        colors: [KidTheme.levelUp, KidTheme.starGold],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: copied)
+    }
+}
+
 struct AnswerButton: View {
     let title: String
     let color: Color

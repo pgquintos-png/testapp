@@ -117,6 +117,10 @@ struct CountingGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     Text(round.prompt)
                         .font(.title.bold())
                         .multilineTextAlignment(.center)
@@ -320,7 +324,7 @@ struct CountingGameView: View {
 
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "Great counting!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Great counting!"),
             leveledUp: leveledUp,
             then: newRound
         )

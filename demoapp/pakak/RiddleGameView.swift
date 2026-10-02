@@ -377,6 +377,10 @@ struct RiddleGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     clueCard
                     optionGrid
 
@@ -494,7 +498,7 @@ struct RiddleGameView: View {
 
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "You solved it!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "You solved it!"),
             leveledUp: leveledUp,
             then: newRound
         )

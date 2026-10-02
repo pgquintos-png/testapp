@@ -68,7 +68,11 @@ struct HomeView: View {
                 Button {
                     selectedActivity = activity
                 } label: {
-                    ActivityCard(activity: activity, level: progress.level(for: activity.title))
+                    ActivityCard(
+                        activity: activity,
+                        level: progress.level(for: activity.title),
+                        hasVoucher: progress.couponCode(for: activity.title) != nil
+                    )
                 }
                 .buttonStyle(KidCardButtonStyle())
             }
@@ -103,6 +107,8 @@ struct HomeView: View {
 struct ActivityCard: View {
     let activity: Activity
     let level: Int
+    /// Finishing the game leaves a voucher waiting inside, which is worth saying on the way past.
+    var hasVoucher = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -129,6 +135,15 @@ struct ActivityCard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(Capsule().fill(.black.opacity(0.18)))
+
+            if hasVoucher {
+                Text("🎟️ Voucher ready")
+                    .font(.caption2.bold())
+                    .foregroundStyle(KidTheme.headline)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(KidTheme.starGold))
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)

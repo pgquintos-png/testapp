@@ -93,14 +93,14 @@ final class GameProgress {
         level(for: activity) >= Self.maxLevel
     }
 
-    /// Returns the persistent coupon code for a completed activity,
-    /// generating and storing one on first call.
-    func couponCode(for activity: String) -> String {
-        if let existing = couponCodes[activity] { return existing }
-        let code = Self.generateCode(for: activity)
-        couponCodes[activity] = code
-        save()
-        return code
+    /// The voucher code for a completed activity, or nil while it is still being played.
+    ///
+    /// Reading this never writes anything — a view can ask for it while drawing. The code is stored
+    /// when the last level lands, but it is also reproducible from the activity name alone, so a
+    /// save made before vouchers existed still shows the same code it would have been given.
+    func couponCode(for activity: String) -> String? {
+        guard isComplete(for: activity) else { return nil }
+        return couponCodes[activity] ?? Self.generateCode(for: activity)
     }
 
     private static func generateCode(for activity: String) -> String {
@@ -131,8 +131,18 @@ final class GameProgress {
         }
 
         levels[activity] = current + 1
+        if current + 1 >= Self.maxLevel {
+            couponCodes[activity] = Self.generateCode(for: activity)
+        }
         save()
         return true
+    }
+
+    /// The line to show after a correct answer. Finishing the game and levelling up both outrank
+    /// the activity's own praise, so `otherwise` is the everyday case.
+    func celebration(for activity: String, leveledUp: Bool, otherwise praise: String) -> String {
+        if isComplete(for: activity) { return "All done — your voucher is ready! 🎟️" }
+        return leveledUp ? "Level \(level(for: activity)) unlocked!" : praise
     }
 
     func noteAsked(_ key: String, in activity: String) {

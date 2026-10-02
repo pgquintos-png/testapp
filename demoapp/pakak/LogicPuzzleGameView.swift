@@ -259,6 +259,10 @@ struct LogicPuzzleGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     if let puzzle {
                         Text(puzzle.prompt)
                             .font(.title2.bold())
@@ -428,7 +432,7 @@ struct LogicPuzzleGameView: View {
 
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "Smart thinking!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Smart thinking!"),
             leveledUp: leveledUp,
             then: newRound
         )

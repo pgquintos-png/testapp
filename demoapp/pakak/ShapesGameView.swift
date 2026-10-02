@@ -186,6 +186,10 @@ struct ShapesGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
+                    if let voucher = progress.couponCode(for: activityName) {
+                        VoucherCard(activity: activityName, code: voucher)
+                    }
+
                     Text("What shape is this?")
                         .font(.title.bold())
                         .foregroundStyle(KidTheme.headline)
@@ -249,7 +253,7 @@ struct ShapesGameView: View {
 
         let leveledUp = progress.recordCorrect(for: activityName)
         feedback.correct(
-            leveledUp ? "Level \(level) unlocked!" : "Shape master!",
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Shape master!"),
             leveledUp: leveledUp,
             then: newRound
         )
