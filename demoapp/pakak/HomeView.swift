@@ -71,7 +71,7 @@ struct HomeView: View {
                     ActivityCard(
                         activity: activity,
                         level: progress.level(for: activity.title),
-                        hasVoucher: progress.couponCode(for: activity.title) != nil
+                        hasVoucher: progress.isComplete(for: activity.title)
                     )
                 }
                 .buttonStyle(KidCardButtonStyle())

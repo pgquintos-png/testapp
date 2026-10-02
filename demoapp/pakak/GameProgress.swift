@@ -13,8 +13,10 @@ final class GameProgress {
 
     var totalStars: Int = 0
 
-    /// Coupon codes keyed by activity name, generated once when the game is first completed.
-    private var couponCodes: [String: String] = [:]
+    /// When each activity was finished, keyed by activity name.
+    private var completedOn: [String: Date] = [:]
+    /// The voucher filled in for each finished activity, keyed by activity name.
+    private var vouchers: [String: Voucher] = [:]
 
     private var levels: [String: Int] = [:]
     private var answersInLevel: [String: Int] = [:]
@@ -35,7 +37,9 @@ final class GameProgress {
 
         var version = currentVersion
         var totalStars: Int
-        var couponCodes: [String: String]
+        /// Optional so a save made before vouchers were filled in still loads.
+        var completedOn: [String: Date]?
+        var vouchers: [String: Voucher]?
         var levels: [String: Int]
         var answersInLevel: [String: Int]
         var askedKeys: [String: [String]]
@@ -51,7 +55,8 @@ final class GameProgress {
     private func save() {
         let snapshot = Snapshot(
             totalStars: totalStars,
-            couponCodes: couponCodes,
+            completedOn: completedOn,
+            vouchers: vouchers,
             levels: levels,
             answersInLevel: answersInLevel,
             askedKeys: askedKeys
@@ -70,7 +75,8 @@ final class GameProgress {
         else { return }
 
         totalStars = saved.totalStars
-        couponCodes = saved.couponCodes
+        completedOn = saved.completedOn ?? [:]
+        vouchers = saved.vouchers ?? [:]
         levels = saved.levels
         answersInLevel = saved.answersInLevel
         askedKeys = saved.askedKeys
@@ -93,22 +99,22 @@ final class GameProgress {
         level(for: activity) >= Self.maxLevel
     }
 
-    /// The voucher code for a completed activity, or nil while it is still being played.
-    ///
-    /// Reading this never writes anything — a view can ask for it while drawing. The code is stored
-    /// when the last level lands, but it is also reproducible from the activity name alone, so a
-    /// save made before vouchers existed still shows the same code it would have been given.
-    func couponCode(for activity: String) -> String? {
+    /// The voucher filled in for a finished activity, or nil until one has been made.
+    func voucher(for activity: String) -> Voucher? {
         guard isComplete(for: activity) else { return nil }
-        return couponCodes[activity] ?? Self.generateCode(for: activity)
+        return vouchers[activity]
     }
 
-    private static func generateCode(for activity: String) -> String {
-        let seeds = ["STAR", "MOON", "SUN", "HEART", "GEMS", "CROWN"]
-        let hash = activity.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-        let word = seeds[hash % seeds.count]
-        let digits = String(format: "%04d", (hash &* 1_337) % 9_000 + 1_000)
-        return "PAKAK-\(word)-\(digits)"
+    /// Fills in the voucher for a finished activity. It is dated the day the game was finished, or
+    /// today for a game finished before that date was recorded.
+    func issueVoucher(for activity: String, claimant: String, reward: String) {
+        guard isComplete(for: activity) else { return }
+        vouchers[activity] = Voucher(
+            claimant: claimant,
+            reward: reward,
+            issued: completedOn[activity] ?? Date()
+        )
+        save()
     }
 
     /// Awards a star and reports whether this answer unlocked the next level.
@@ -132,7 +138,7 @@ final class GameProgress {
 
         levels[activity] = current + 1
         if current + 1 >= Self.maxLevel {
-            couponCodes[activity] = Self.generateCode(for: activity)
+            completedOn[activity] = Date()
         }
         save()
         return true
@@ -141,7 +147,7 @@ final class GameProgress {
     /// The line to show after a correct answer. Finishing the game and levelling up both outrank
     /// the activity's own praise, so `otherwise` is the everyday case.
     func celebration(for activity: String, leveledUp: Bool, otherwise praise: String) -> String {
-        if isComplete(for: activity) { return "All done — your voucher is ready! 🎟️" }
+        if isComplete(for: activity) { return "All done — make your voucher! 🎟️" }
         return leveledUp ? "Level \(level(for: activity)) unlocked!" : praise
     }
 
@@ -161,6 +167,48 @@ final class GameProgress {
             return .max
         }
         return keys.count - index
+    }
+}
+
+/// The gift voucher a child fills in after finishing all 100 levels of a game.
+struct Voucher: Codable, Equatable {
+    static let issuer = "Tito Paul"
+    static let expiration = "No Expiration"
+    static let rewards = ["One Free Dinner", "Weekend BBQ", "Coffee & Dessert", "Favor"]
+
+    var claimant: String
+    var reward: String
+    var issued: Date
+
+    var id: String { "#CLAIM-TP-\(Calendar.current.component(.year, from: issued))" }
+
+    var issuedText: String { issued.formatted(date: .long, time: .omitted) }
+
+    /// The voucher as plain text, for sharing.
+    var text: String {
+        let rule = String(repeating: "=", count: 48)
+        let thin = String(repeating: "-", count: 48)
+        return """
+        \(rule)
+        OFFICIAL GIFT VOUCHER
+        \(rule)
+
+        CLAIMABLE BY : \(claimant)
+        VOUCHER ID   : \(id)
+
+        \(thin)
+        THIS VOUCHER ENTITLES \(claimant.uppercased()) TO:
+        \(reward)
+
+        \(thin)
+        ISSUED BY    : \(Self.issuer)
+        DATE ISSUED  : \(issuedText)
+        EXPIRATION   : \(Self.expiration)
+
+        \(rule)
+        Terms: Present this voucher to the issuer to redeem.
+        \(rule)
+        """
     }
 }
 

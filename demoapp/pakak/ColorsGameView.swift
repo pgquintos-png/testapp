@@ -101,8 +101,8 @@ struct ColorsGameView: View {
                         answersInLevel: progress.answersInCurrentLevel(for: activityName)
                     )
 
-                    if let voucher = progress.couponCode(for: activityName) {
-                        VoucherCard(activity: activityName, code: voucher)
+                    if progress.isComplete(for: activityName) {
+                        VoucherCard(activity: activityName)
                     }
 
                     Text("Find the color!")
