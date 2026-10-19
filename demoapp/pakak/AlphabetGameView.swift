@@ -350,60 +350,70 @@ struct AlphabetGameView: View {
         // Draw from the three hardest styles unlocked so far, which keeps some variety without
         // sliding back to the easiest questions at high levels.
         let styles = Array(unlockedStyles.suffix(3))
-        let style = styles.randomElement() ?? .matchUppercase
 
-        if let length = style.wordLength {
-            guard let entry = picker.choose(
-                from: Self.spellingWords[length] ?? [],
-                key: { "\(style.rawValue)|\($0.word)" }
-            ) else { return }
+        // One pool across every style, keyed by what is being asked about, so the same letter or
+        // picture never comes back in a different style until everything else has had a turn.
+        struct Candidate {
+            let style: QuizStyle
+            let letter: Character?
+            let picture: (emoji: String, word: String, letter: Character)?
+            let key: String
+        }
+        var candidates: [Candidate] = []
+        for style in styles {
+            if let length = style.wordLength {
+                candidates += (Self.spellingWords[length] ?? []).map {
+                    Candidate(style: style, letter: nil, picture: ($0.emoji, $0.word, " "), key: "spell|\($0.word)")
+                }
+            } else if style == .startingSound {
+                candidates += Self.pictureWords.map {
+                    Candidate(style: style, letter: nil, picture: $0, key: "sound|\($0.word)")
+                }
+            } else {
+                let subjects = letters.filter { letter in
+                    switch style {
+                    case .nextLetter: letter != "Z"
+                    case .previousLetter: letter != "A"
+                    default: true
+                    }
+                }
+                candidates += subjects.map { Candidate(style: style, letter: $0, picture: nil, key: "letter|\($0)") }
+            }
+        }
 
-            let next = Round(
-                style: style,
+        guard let pick = picker.choose(from: candidates, key: \.key) else { return }
+
+        let next: Round
+        if pick.style.wordLength != nil, let entry = pick.picture {
+            next = Round(
+                style: pick.style,
                 promptText: entry.emoji,
                 promptSpeech: entry.word,
                 answerLabel: entry.word.uppercased(),
                 options: letterBank(for: entry.word),
-                key: "\(style.rawValue)|\(entry.word)",
+                key: pick.key,
                 word: entry.word
             )
-            picker.note(next.key)
-            round = next
-            speak("Spell \(entry.word)")
-        } else if style == .startingSound {
-            guard let picture = picker.choose(
-                from: Self.pictureWords,
-                key: { "\(style.rawValue)|\($0.word)" }
-            ) else { return }
-
-            let next = Round(
-                style: style,
+        } else if let picture = pick.picture {
+            next = Round(
+                style: pick.style,
                 promptText: picture.emoji,
                 promptSpeech: picture.word,
                 answerLabel: String(picture.letter),
-                options: ([String(picture.letter)] + decoys(for: picture.letter, style: style).map(String.init)).shuffled(),
-                key: "\(style.rawValue)|\(picture.word)"
+                options: ([String(picture.letter)] + decoys(for: picture.letter, style: pick.style).map(String.init)).shuffled(),
+                key: pick.key
             )
-            picker.note(next.key)
-            round = next
+        } else if let letter = pick.letter {
+            next = build(style: pick.style, letter: letter, key: pick.key)
         } else {
-            let subjects = letters.filter { letter in
-                switch style {
-                case .nextLetter: letter != "Z"
-                case .previousLetter: letter != "A"
-                default: true
-                }
-            }
-            guard let letter = picker.choose(from: subjects, key: { "\(style.rawValue)|\($0)" }) else { return }
-
-            let next = build(style: style, letter: letter)
-            picker.note(next.key)
-            round = next
+            return
         }
+        picker.note(next.key)
+        round = next
+        if let word = next.word { speak("Spell \(word)") }
     }
 
-    private func build(style: QuizStyle, letter: Character) -> Round {
-        let key = "\(style.rawValue)|\(letter)"
+    private func build(style: QuizStyle, letter: Character, key: String) -> Round {
         let decoyLetters = decoys(for: letter, style: style)
 
         switch style {
