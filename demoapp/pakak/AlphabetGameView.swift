@@ -16,19 +16,32 @@ struct AlphabetGameView: View {
         case nextLetter         // which letter comes after M
         case previousLetter     // which letter comes before M
         case startingSound      // 🍎 -> A
-        case spellWord          // 🍎 -> apple, misspelled choices
+        case spellThree         // hear "cat", tap C-A-T
+        case spellFour          // hear "fish", tap F-I-S-H
+        case spellFive          // hear "apple", tap A-P-P-L-E
 
         /// Listed in unlock order, so the hardest unlocked styles are the last ones.
         var unlockLevel: Int {
             switch self {
             case .matchUppercase: 1
-            case .nearbyLetters: 10
-            case .findLowercase: 22
-            case .findUppercase: 34
-            case .nextLetter: 46
-            case .previousLetter: 58
-            case .startingSound: 70
-            case .spellWord: 30
+            case .nearbyLetters: 6
+            case .findLowercase: 12
+            case .findUppercase: 18
+            case .nextLetter: 26
+            case .previousLetter: 32
+            case .startingSound: 40
+            case .spellThree: 50
+            case .spellFour: 65
+            case .spellFive: 80
+            }
+        }
+
+        var wordLength: Int? {
+            switch self {
+            case .spellThree: 3
+            case .spellFour: 4
+            case .spellFive: 5
+            default: nil
             }
         }
 
@@ -40,12 +53,15 @@ struct AlphabetGameView: View {
             case .nextLetter: "Which letter comes NEXT?"
             case .previousLetter: "Which letter comes BEFORE?"
             case .startingSound: "Which letter does it start with?"
-            case .spellWord: "Which spelling is right?"
+            case .spellThree, .spellFour, .spellFive: "Spell the word you hear!"
             }
         }
 
         var caption: String {
-            self == .startingSound || self == .spellWord ? "Tap the picture to hear it!" : "Tap the letter to hear it!"
+            switch self {
+            case .startingSound, .spellThree, .spellFour, .spellFive: "Tap the picture to hear it!"
+            default: "Tap the letter to hear it!"
+            }
         }
     }
 
@@ -56,6 +72,8 @@ struct AlphabetGameView: View {
         let answerLabel: String
         let options: [String]
         let key: String
+        /// Set for spelling rounds: the word to build one letter at a time from `options`.
+        var word: String? = nil
     }
 
     @Environment(GameProgress.self) private var progress
@@ -65,6 +83,11 @@ struct AlphabetGameView: View {
     @State private var round: Round?
     @State private var feedback = AnswerFeedback()
     @State private var synthesizer = AVSpeechSynthesizer()
+    /// The letters of a spelling word tapped correctly so far.
+    @State private var spelled = ""
+    /// A spelling word forgives one wrong letter before it counts as a miss.
+    @State private var slipped = false
+    @State private var slipTap = false
 
     private let activityName = "Alphabet"
     private let letters: [Character] = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -99,6 +122,32 @@ struct AlphabetGameView: View {
         ("🦓", "zebra", "Z"),
     ]
 
+    private static let spellingWords: [Int: [(emoji: String, word: String)]] = [
+        3: [
+            ("🐱", "cat"), ("🐶", "dog"), ("☀️", "sun"), ("🚌", "bus"), ("🐷", "pig"),
+            ("🐮", "cow"), ("🎩", "hat"), ("🛏️", "bed"), ("🥚", "egg"), ("☕", "cup"),
+            ("📦", "box"), ("🦊", "fox"), ("🐝", "bee"), ("🐜", "ant"), ("🦉", "owl"),
+            ("🚗", "car"), ("🔑", "key"), ("🦵", "leg"), ("👂", "ear"), ("🦇", "bat"),
+            ("🕸️", "web"), ("🗺️", "map"),
+        ],
+        4: [
+            ("🐟", "fish"), ("🐸", "frog"), ("🐻", "bear"), ("🦆", "duck"), ("⚽", "ball"),
+            ("🎂", "cake"), ("⭐", "star"), ("🌙", "moon"), ("🌳", "tree"), ("📖", "book"),
+            ("⛵", "boat"), ("🪁", "kite"), ("🦁", "lion"), ("🐦", "bird"), ("🥛", "milk"),
+            ("🌽", "corn"), ("👟", "shoe"), ("🚪", "door"), ("✋", "hand"), ("💍", "ring"),
+            ("🥁", "drum"), ("🐐", "goat"), ("👃", "nose"), ("❄️", "snow"), ("🧦", "sock"),
+            ("🔔", "bell"),
+        ],
+        5: [
+            ("🍎", "apple"), ("🏠", "house"), ("🐴", "horse"), ("🐭", "mouse"), ("🐑", "sheep"),
+            ("🚂", "train"), ("🦓", "zebra"), ("🐍", "snake"), ("🐯", "tiger"), ("🪑", "chair"),
+            ("🕰️", "clock"), ("🍞", "bread"), ("🍇", "grape"), ("🍋", "lemon"), ("🍕", "pizza"),
+            ("✈️", "plane"), ("🚚", "truck"), ("🐳", "whale"), ("🦈", "shark"), ("🤖", "robot"),
+            ("❤️", "heart"), ("👑", "crown"), ("🧃", "juice"), ("🍬", "candy"), ("🐼", "panda"),
+            ("🐫", "camel"), ("🐨", "koala"),
+        ],
+    ]
+
     var body: some View {
         ZStack {
             KidBackdrop()
@@ -124,6 +173,7 @@ struct AlphabetGameView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.success, trigger: feedback.rightTap)
         .sensoryFeedback(.error, trigger: feedback.wrongTap)
+        .sensoryFeedback(.warning, trigger: slipTap)
     }
 
     private var modePicker: some View {
@@ -182,8 +232,8 @@ struct AlphabetGameView: View {
                     answersInLevel: progress.answersInCurrentLevel(for: activityName)
                 )
 
-                if let voucher = progress.couponCode(for: activityName) {
-                    VoucherCard(activity: activityName, code: voucher)
+                if progress.isComplete(for: activityName) {
+                    VoucherCard(activity: activityName)
                 }
 
                 Text(round.style.instruction)
@@ -191,6 +241,19 @@ struct AlphabetGameView: View {
                     .multilineTextAlignment(.center)
                     .foregroundStyle(KidTheme.headline)
 
+                if let word = round.word {
+                    spellingSection(word: word, round: round)
+                } else {
+                    letterQuestion(round)
+                }
+            }
+        } else {
+            ProgressView().onAppear { newRound() }
+        }
+    }
+
+    @ViewBuilder
+    private func letterQuestion(_ round: Round) -> some View {
                 Text(round.promptText)
                     .font(.system(size: 90, weight: .bold, design: .rounded))
                     .foregroundStyle(KidTheme.cardColors[2])
@@ -218,31 +281,95 @@ struct AlphabetGameView: View {
                         }
                     }
                 }
+    }
+
+    @ViewBuilder
+    private func spellingSection(word: String, round: Round) -> some View {
+        Text(round.promptText)
+            .font(.system(size: 80))
+            .padding(20)
+            .background(
+                RoundedRectangle(cornerRadius: 24)
+                    .fill(.white.opacity(0.7))
+            )
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.title3)
+                    .foregroundStyle(KidTheme.cardColors[2])
+                    .padding(8)
             }
-        } else {
-            ProgressView().onAppear { newRound() }
+            .onTapGesture { speak(round.promptSpeech) }
+
+        Text(round.style.caption)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+        HStack(spacing: 8) {
+            ForEach(Array(word.uppercased().enumerated()), id: \.offset) { index, letter in
+                let filled = index < spelled.count
+                Text(filled ? String(letter) : " ")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(KidTheme.headline)
+                    .frame(width: 52, height: 62)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(filled ? KidTheme.cardColors[2].opacity(0.35) : .white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(
+                                index == spelled.count ? KidTheme.cardColors[2] : .clear,
+                                lineWidth: 3
+                            )
+                    )
+            }
+        }
+        .modifier(ShakeEffect(shakes: slipTap ? 2 : 0))
+        .modifier(ShakeEffect(shakes: feedback.wrongTap ? 2 : 0))
+
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
+            ForEach(round.options, id: \.self) { option in
+                AnswerButton(
+                    title: option,
+                    color: KidTheme.cardColors[
+                        Int(option.unicodeScalars.first?.value ?? 65) % KidTheme.cardColors.count
+                    ]
+                ) {
+                    spell(option, in: round, word: word)
+                }
+            }
         }
     }
 
     private func newRound() {
         feedback.clear()
+        spelled = ""
+        slipped = false
 
         let picker = QuestionPicker(progress: progress, activity: activityName)
         // Draw from the three hardest styles unlocked so far, which keeps some variety without
         // sliding back to the easiest questions at high levels.
         let styles = Array(unlockedStyles.suffix(3))
-        let spellingWords = Self.pictureWords.filter { (3...4).contains($0.word.count) && !$0.word.contains(" ") && !$0.word.contains("-") }
 
         // One pool across every style, keyed by what is being asked about, so the same letter or
         // picture never comes back in a different style until everything else has had a turn.
-        var candidates: [(style: QuizStyle, letter: Character?, picture: (emoji: String, word: String, letter: Character)?, key: String)] = []
+        struct Candidate {
+            let style: QuizStyle
+            let letter: Character?
+            let picture: (emoji: String, word: String, letter: Character)?
+            let key: String
+        }
+        var candidates: [Candidate] = []
         for style in styles {
-            switch style {
-            case .spellWord:
-                candidates += spellingWords.map { (style, nil, $0, "spell|\($0.word)") }
-            case .startingSound:
-                candidates += Self.pictureWords.map { (style, nil, $0, "sound|\($0.word)") }
-            default:
+            if let length = style.wordLength {
+                candidates += (Self.spellingWords[length] ?? []).map {
+                    Candidate(style: style, letter: nil, picture: ($0.emoji, $0.word, " "), key: "spell|\($0.word)")
+                }
+            } else if style == .startingSound {
+                candidates += Self.pictureWords.map {
+                    Candidate(style: style, letter: nil, picture: $0, key: "sound|\($0.word)")
+                }
+            } else {
                 let subjects = letters.filter { letter in
                     switch style {
                     case .nextLetter: letter != "Z"
@@ -250,22 +377,22 @@ struct AlphabetGameView: View {
                     default: true
                     }
                 }
-                candidates += subjects.map { (style, $0, nil, "letter|\($0)") }
+                candidates += subjects.map { Candidate(style: style, letter: $0, picture: nil, key: "letter|\($0)") }
             }
         }
 
         guard let pick = picker.choose(from: candidates, key: \.key) else { return }
 
         let next: Round
-        if let picture = pick.picture, pick.style == .spellWord {
-            let wrong = Self.misspellings(of: picture.word).prefix(optionCount - 1)
+        if pick.style.wordLength != nil, let entry = pick.picture {
             next = Round(
                 style: pick.style,
-                promptText: picture.emoji,
-                promptSpeech: picture.word,
-                answerLabel: picture.word,
-                options: ([picture.word] + wrong).shuffled(),
-                key: pick.key
+                promptText: entry.emoji,
+                promptSpeech: entry.word,
+                answerLabel: entry.word.uppercased(),
+                options: letterBank(for: entry.word),
+                key: pick.key,
+                word: entry.word
             )
         } else if let picture = pick.picture {
             next = Round(
@@ -283,6 +410,7 @@ struct AlphabetGameView: View {
         }
         picker.note(next.key)
         round = next
+        if let word = next.word { speak("Spell \(word)") }
     }
 
     private func build(style: QuizStyle, letter: Character, key: String) -> Round {
@@ -340,7 +468,7 @@ struct AlphabetGameView: View {
     private func decoys(for letter: Character, style: QuizStyle) -> [Character] {
         var pool: [Character]
         switch style {
-        case .matchUppercase, .startingSound, .spellWord:
+        case .matchUppercase, .startingSound, .spellThree, .spellFour, .spellFive:
             pool = letters.shuffled()
         case .nearbyLetters, .nextLetter, .previousLetter:
             pool = neighbours(of: letter) + letters.shuffled()
@@ -357,31 +485,53 @@ struct AlphabetGameView: View {
         return chosen
     }
 
-    private static func misspellings(of word: String) -> [String] {
-        let chars = Array(word)
-        var variants: [String] = []
+    /// Every letter in the word plus a few look-alike decoys, so the child has to listen rather than
+    /// just use up the tiles. The number of decoys grows with the level like the other games' choices.
+    private func letterBank(for word: String) -> [String] {
+        let needed = Array(Set(word.uppercased()))
+        let decoyCount = difficulty.optionCount - 2
+        let pool = needed.flatMap { Self.lookAlikes[$0] ?? [] }.shuffled() + letters.shuffled()
 
-        for index in chars.indices.dropLast() where chars[index] != chars[index + 1] {
-            var swapped = chars
-            swapped.swapAt(index, index + 1)
-            variants.append(String(swapped))
-        }
-        for index in chars.indices where chars.count > 3 {
-            var dropped = chars
-            dropped.remove(at: index)
-            variants.append(String(dropped))
-        }
-        let vowels = Array("aeiou")
-        for index in chars.indices where vowels.contains(chars[index]) {
-            for vowel in vowels where vowel != chars[index] {
-                var replaced = chars
-                replaced[index] = vowel
-                variants.append(String(replaced))
+        var decoys: [Character] = []
+        for candidate in pool where decoys.count < decoyCount {
+            if !needed.contains(candidate) && !decoys.contains(candidate) {
+                decoys.append(candidate)
             }
         }
+        return (needed + decoys).shuffled().map(String.init)
+    }
 
-        var seen: Set<String> = [word]
-        return variants.shuffled().filter { seen.insert($0).inserted }
+    private func spell(_ tapped: String, in round: Round, word: String) {
+        guard !feedback.isResolving else { return }
+
+        let target = Array(word.uppercased())
+        guard spelled.count < target.count else { return }
+
+        guard tapped == String(target[spelled.count]) else {
+            if slipped {
+                speak(word)
+                feedback.wrong("It was \(round.answerLabel).", then: newRound)
+            } else {
+                slipped = true
+                speak("Try again")
+                withAnimation(.default) { slipTap.toggle() }
+            }
+            return
+        }
+
+        spelled.append(target[spelled.count])
+        guard spelled.count == target.count else {
+            speak(tapped)
+            return
+        }
+
+        let leveledUp = progress.recordCorrect(for: activityName)
+        speak("\(target.map(String.init).joined(separator: ", ")). \(word)!")
+        feedback.correct(
+            progress.celebration(for: activityName, leveledUp: leveledUp, otherwise: "Great spelling!"),
+            leveledUp: leveledUp,
+            then: newRound
+        )
     }
 
     private func neighbours(of letter: Character) -> [Character] {

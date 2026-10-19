@@ -134,52 +134,122 @@ struct LevelBadge: View {
     }
 }
 
-/// The prize for finishing all 100 levels of a game: a voucher code to show a grown-up.
+/// The prize for finishing all 100 levels of a game: a gift voucher the child fills in themselves.
 ///
-/// Sits at the top of a finished game and stays there — the code is part of the saved progress, so
-/// it is not a banner that can be missed while a child is celebrating.
+/// Sits at the top of a finished game and stays there. Until it is filled in it asks who can claim
+/// it and what it is for; after that it shows the finished voucher, which can be shared or redone.
 struct VoucherCard: View {
     let activity: String
-    let code: String
 
-    @State private var copied = false
+    @Environment(GameProgress.self) private var progress
+
+    @State private var editing = false
 
     var body: some View {
-        VStack(spacing: 10) {
-            Text("🎟️")
-                .font(.system(size: 40))
+        Group {
+            if let voucher = progress.voucher(for: activity), !editing {
+                VoucherTicket(voucher: voucher) { editing = true }
+            } else {
+                VoucherForm(
+                    activity: activity,
+                    existing: progress.voucher(for: activity)
+                ) { claimant, reward in
+                    progress.issueVoucher(for: activity, claimant: claimant, reward: reward)
+                    editing = false
+                }
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: editing)
+    }
+}
 
-            Text("\(activity) complete!")
-                .font(.title3.bold())
+private struct VoucherForm: View {
+    let activity: String
+    let existing: Voucher?
+    let onCreate: (String, String) -> Void
+
+    private static let custom = "Something else"
+
+    @State private var claimant = ""
+    @State private var choice: String?
+    @State private var customReward = ""
+
+    private var reward: String {
+        let picked = choice == Self.custom ? customReward : (choice ?? "")
+        return picked.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var name: String { claimant.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var canCreate: Bool { !name.isEmpty && !reward.isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(spacing: 6) {
+                Text("🎟️")
+                    .font(.system(size: 40))
+                Text("\(activity) complete!")
+                    .font(.title3.bold())
+                Text("Make your gift voucher")
+                    .font(.subheadline)
+                    .opacity(0.9)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+
+            Text("Claimable by")
+                .font(.headline)
                 .foregroundStyle(.white)
 
-            Text("Show this code to claim your prize")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.9))
-                .multilineTextAlignment(.center)
+            TextField("Your name", text: $claimant)
+                .textInputAutocapitalization(.words)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                .foregroundStyle(KidTheme.headline)
+
+            Text("This voucher is for")
+                .font(.headline)
+                .foregroundStyle(.white)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                ForEach(Voucher.rewards + [Self.custom], id: \.self) { option in
+                    Button {
+                        choice = option
+                    } label: {
+                        Text(option)
+                            .font(.subheadline.bold())
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .padding(.horizontal, 6)
+                            .foregroundStyle(choice == option ? .white : KidTheme.headline)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(choice == option ? KidTheme.headline : .white)
+                            )
+                    }
+                    .buttonStyle(KidCardButtonStyle())
+                }
+            }
+
+            if choice == Self.custom {
+                TextField("What can they claim?", text: $customReward)
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.white))
+                    .foregroundStyle(KidTheme.headline)
+            }
 
             Button {
-                UIPasteboard.general.string = code
-                copied = true
+                onCreate(name, reward)
             } label: {
-                HStack(spacing: 8) {
-                    Text(code)
-                        .font(.title3.monospaced().bold())
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.subheadline)
-                }
-                .foregroundStyle(KidTheme.headline)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .background(Capsule().fill(.white))
+                Text(existing == nil ? "Make my voucher" : "Update voucher")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(KidTheme.headline.opacity(canCreate ? 1 : 0.4)))
             }
             .buttonStyle(KidCardButtonStyle())
-
-            if copied {
-                Text("Copied!")
-                    .font(.caption.bold())
-                    .foregroundStyle(.white)
-            }
+            .disabled(!canCreate)
         }
         .padding(24)
         .frame(maxWidth: .infinity)
@@ -194,7 +264,117 @@ struct VoucherCard: View {
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
         )
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: copied)
+        .onAppear {
+            guard let existing else { return }
+            claimant = existing.claimant
+            if Voucher.rewards.contains(existing.reward) {
+                choice = existing.reward
+            } else {
+                choice = Self.custom
+                customReward = existing.reward
+            }
+        }
+    }
+}
+
+private struct VoucherTicket: View {
+    let voucher: Voucher
+    let onEdit: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            VStack(spacing: 4) {
+                Text("OFFICIAL GIFT VOUCHER")
+                    .font(.title3.weight(.heavy))
+                    .tracking(1.5)
+                Text("🎟️")
+                    .font(.system(size: 32))
+            }
+
+            Divider().overlay(KidTheme.headline.opacity(0.4))
+
+            VStack(spacing: 8) {
+                row("Claimable by", voucher.claimant)
+                row("Voucher ID", voucher.id)
+            }
+
+            dashed
+
+            VStack(spacing: 6) {
+                Text("THIS VOUCHER ENTITLES \(voucher.claimant.uppercased()) TO:")
+                    .font(.caption.bold())
+                    .multilineTextAlignment(.center)
+                Text(voucher.reward)
+                    .font(.title2.bold())
+                    .foregroundStyle(KidTheme.levelUp)
+                    .multilineTextAlignment(.center)
+            }
+
+            dashed
+
+            VStack(spacing: 8) {
+                row("Issued by", Voucher.issuer)
+                row("Date issued", voucher.issuedText)
+                row("Expiration", Voucher.expiration)
+            }
+
+            Divider().overlay(KidTheme.headline.opacity(0.4))
+
+            Text("Terms: Present this voucher to the issuer to redeem.")
+                .font(.caption2)
+                .multilineTextAlignment(.center)
+                .opacity(0.8)
+
+            HStack(spacing: 12) {
+                ShareLink(item: voucher.text) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                Button(action: onEdit) {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            .font(.subheadline.bold())
+            .buttonStyle(.bordered)
+            .tint(KidTheme.levelUp)
+        }
+        .foregroundStyle(KidTheme.headline)
+        .padding(22)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.white)
+                .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [KidTheme.levelUp, KidTheme.starGold],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 4
+                )
+        )
+    }
+
+    private var dashed: some View {
+        Rectangle()
+            .stroke(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            .frame(height: 1)
+            .opacity(0.4)
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label.uppercased())
+                .font(.caption.bold())
+                .opacity(0.7)
+            Spacer()
+            Text(value)
+                .font(.subheadline.bold())
+                .multilineTextAlignment(.trailing)
+        }
     }
 }
 
