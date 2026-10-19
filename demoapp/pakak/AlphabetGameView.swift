@@ -16,6 +16,7 @@ struct AlphabetGameView: View {
         case nextLetter         // which letter comes after M
         case previousLetter     // which letter comes before M
         case startingSound      // 🍎 -> A
+        case spellWord          // 🍎 -> apple, misspelled choices
 
         /// Listed in unlock order, so the hardest unlocked styles are the last ones.
         var unlockLevel: Int {
@@ -27,6 +28,7 @@ struct AlphabetGameView: View {
             case .nextLetter: 46
             case .previousLetter: 58
             case .startingSound: 70
+            case .spellWord: 30
             }
         }
 
@@ -38,11 +40,12 @@ struct AlphabetGameView: View {
             case .nextLetter: "Which letter comes NEXT?"
             case .previousLetter: "Which letter comes BEFORE?"
             case .startingSound: "Which letter does it start with?"
+            case .spellWord: "Which spelling is right?"
             }
         }
 
         var caption: String {
-            self == .startingSound ? "Tap the picture to hear it!" : "Tap the letter to hear it!"
+            self == .startingSound || self == .spellWord ? "Tap the picture to hear it!" : "Tap the letter to hear it!"
         }
     }
 
@@ -228,42 +231,61 @@ struct AlphabetGameView: View {
         // Draw from the three hardest styles unlocked so far, which keeps some variety without
         // sliding back to the easiest questions at high levels.
         let styles = Array(unlockedStyles.suffix(3))
-        let style = styles.randomElement() ?? .matchUppercase
+        let spellingWords = Self.pictureWords.filter { (3...4).contains($0.word.count) && !$0.word.contains(" ") && !$0.word.contains("-") }
 
-        if style == .startingSound {
-            guard let picture = picker.choose(
-                from: Self.pictureWords,
-                key: { "\(style.rawValue)|\($0.word)" }
-            ) else { return }
+        // One pool across every style, keyed by what is being asked about, so the same letter or
+        // picture never comes back in a different style until everything else has had a turn.
+        var candidates: [(style: QuizStyle, letter: Character?, picture: (emoji: String, word: String, letter: Character)?, key: String)] = []
+        for style in styles {
+            switch style {
+            case .spellWord:
+                candidates += spellingWords.map { (style, nil, $0, "spell|\($0.word)") }
+            case .startingSound:
+                candidates += Self.pictureWords.map { (style, nil, $0, "sound|\($0.word)") }
+            default:
+                let subjects = letters.filter { letter in
+                    switch style {
+                    case .nextLetter: letter != "Z"
+                    case .previousLetter: letter != "A"
+                    default: true
+                    }
+                }
+                candidates += subjects.map { (style, $0, nil, "letter|\($0)") }
+            }
+        }
 
-            let next = Round(
-                style: style,
+        guard let pick = picker.choose(from: candidates, key: \.key) else { return }
+
+        let next: Round
+        if let picture = pick.picture, pick.style == .spellWord {
+            let wrong = Self.misspellings(of: picture.word).prefix(optionCount - 1)
+            next = Round(
+                style: pick.style,
+                promptText: picture.emoji,
+                promptSpeech: picture.word,
+                answerLabel: picture.word,
+                options: ([picture.word] + wrong).shuffled(),
+                key: pick.key
+            )
+        } else if let picture = pick.picture {
+            next = Round(
+                style: pick.style,
                 promptText: picture.emoji,
                 promptSpeech: picture.word,
                 answerLabel: String(picture.letter),
-                options: ([String(picture.letter)] + decoys(for: picture.letter, style: style).map(String.init)).shuffled(),
-                key: "\(style.rawValue)|\(picture.word)"
+                options: ([String(picture.letter)] + decoys(for: picture.letter, style: pick.style).map(String.init)).shuffled(),
+                key: pick.key
             )
-            picker.note(next.key)
-            round = next
+        } else if let letter = pick.letter {
+            next = build(style: pick.style, letter: letter, key: pick.key)
         } else {
-            let subjects = letters.filter { letter in
-                switch style {
-                case .nextLetter: letter != "Z"
-                case .previousLetter: letter != "A"
-                default: true
-                }
-            }
-            guard let letter = picker.choose(from: subjects, key: { "\(style.rawValue)|\($0)" }) else { return }
-
-            let next = build(style: style, letter: letter)
-            picker.note(next.key)
-            round = next
+            return
         }
+        picker.note(next.key)
+        round = next
     }
 
-    private func build(style: QuizStyle, letter: Character) -> Round {
-        let key = "\(style.rawValue)|\(letter)"
+    private func build(style: QuizStyle, letter: Character, key: String) -> Round {
         let decoyLetters = decoys(for: letter, style: style)
 
         switch style {
@@ -318,7 +340,7 @@ struct AlphabetGameView: View {
     private func decoys(for letter: Character, style: QuizStyle) -> [Character] {
         var pool: [Character]
         switch style {
-        case .matchUppercase, .startingSound:
+        case .matchUppercase, .startingSound, .spellWord:
             pool = letters.shuffled()
         case .nearbyLetters, .nextLetter, .previousLetter:
             pool = neighbours(of: letter) + letters.shuffled()
@@ -333,6 +355,33 @@ struct AlphabetGameView: View {
             }
         }
         return chosen
+    }
+
+    private static func misspellings(of word: String) -> [String] {
+        let chars = Array(word)
+        var variants: [String] = []
+
+        for index in chars.indices.dropLast() where chars[index] != chars[index + 1] {
+            var swapped = chars
+            swapped.swapAt(index, index + 1)
+            variants.append(String(swapped))
+        }
+        for index in chars.indices where chars.count > 3 {
+            var dropped = chars
+            dropped.remove(at: index)
+            variants.append(String(dropped))
+        }
+        let vowels = Array("aeiou")
+        for index in chars.indices where vowels.contains(chars[index]) {
+            for vowel in vowels where vowel != chars[index] {
+                var replaced = chars
+                replaced[index] = vowel
+                variants.append(String(replaced))
+            }
+        }
+
+        var seen: Set<String> = [word]
+        return variants.shuffled().filter { seen.insert($0).inserted }
     }
 
     private func neighbours(of letter: Character) -> [Character] {
